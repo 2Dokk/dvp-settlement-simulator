@@ -1,0 +1,20 @@
+services:
+  postgres:
+    image: postgres:16
+    container_name: dvp-postgres
+    environment:
+      POSTGRES_DB: dvp
+      POSTGRES_USER: dvp
+      POSTGRES_PASSWORD: dvp
+    ports:
+      - "5432:5432"
+    volumes:
+      - dvp-postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U dvp -d dvp"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+volumes:
+  dvp-postgres-data:
