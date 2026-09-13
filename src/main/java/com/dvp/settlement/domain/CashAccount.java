@@ -54,13 +54,4 @@ public class CashAccount {
     public void credit(BigDecimal amount) {
         this.balance = this.balance.add(amount);
     }
-
-    /**
-     * Debits without the non-negative guard. Reserved for the CCP's own account during netted
-     * batch settlement — see SettlementService for why the CCP is allowed to run temporarily
-     * negative within a batch even though every other participant is not.
-     */
-    public void debitUnchecked(BigDecimal amount) {
-        this.balance = this.balance.subtract(amount);
-    }
 }

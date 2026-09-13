@@ -24,10 +24,12 @@ public class AccountDtos {
     }
 
     public record LedgerEntryResponse(Long id, String accountType, Long accountId, String entryType,
-                                       BigDecimal amount, Long relatedInstructionId, Instant createdAt) {
+                                       BigDecimal amount, Long relatedInstructionId, Long netPositionId,
+                                       Instant createdAt) {
         public static LedgerEntryResponse from(LedgerEntry e) {
             return new LedgerEntryResponse(e.getId(), e.getAccountType().name(), e.getAccountId(),
-                    e.getEntryType().name(), e.getAmount(), e.getRelatedInstructionId(), e.getCreatedAt());
+                    e.getEntryType().name(), e.getAmount(), e.getRelatedInstructionId(), e.getNetPositionId(),
+                    e.getCreatedAt());
         }
     }
 }

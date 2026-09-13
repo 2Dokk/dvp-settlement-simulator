@@ -1,13 +1,16 @@
 package com.dvp.settlement.repository;
 
 import com.dvp.settlement.domain.Trade;
+import jakarta.persistence.LockModeType;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Lock;
 import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
 import java.time.LocalDate;
 import java.util.List;
+import java.util.Optional;
 
 public interface TradeRepository extends JpaRepository<Trade, Long> {
 
@@ -26,4 +29,12 @@ public interface TradeRepository extends JpaRepository<Trade, Long> {
     int claimPendingForBatch(@Param("settlementDate") LocalDate settlementDate, @Param("batchId") Long batchId);
 
     List<Trade> findByBatchId(Long batchId);
+
+    /**
+     * Locks the trade row. Both settlement paths take trade locks before account locks (the batch
+     * path via claimPendingForBatch's UPDATE), so a direct settlement and a batch can't deadlock.
+     */
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("select t from Trade t where t.id = :id")
+    Optional<Trade> lockById(@Param("id") Long id);
 }

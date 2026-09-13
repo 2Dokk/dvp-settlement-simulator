@@ -51,13 +51,4 @@ public class SecurityHolding {
     public void credit(long amount) {
         this.quantity += amount;
     }
-
-    /**
-     * Debits without the non-negative guard. Reserved for the CCP's own holding during netted
-     * batch settlement — see SettlementService for why the CCP is allowed to run temporarily
-     * negative within a batch even though every other participant is not.
-     */
-    public void debitUnchecked(long amount) {
-        this.quantity -= amount;
-    }
 }

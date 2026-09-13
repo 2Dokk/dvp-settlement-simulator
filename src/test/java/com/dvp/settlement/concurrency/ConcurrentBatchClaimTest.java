@@ -3,7 +3,7 @@ package com.dvp.settlement.concurrency;
 import com.dvp.settlement.domain.*;
 import com.dvp.settlement.repository.*;
 import com.dvp.settlement.service.AccountService;
-import com.dvp.settlement.service.SettlementOrchestrator;
+import com.dvp.settlement.service.BatchSettlementService;
 import com.dvp.settlement.service.TradeService;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -37,7 +37,7 @@ class ConcurrentBatchClaimTest extends AbstractIntegrationTest {
     @Autowired
     private TradeService tradeService;
     @Autowired
-    private SettlementOrchestrator orchestrator;
+    private BatchSettlementService batchSettlementService;
 
     @Test
     void concurrentBatchRunsForTheSameDateNeverDoubleClaimOrLoseATrade() throws Exception {
@@ -63,7 +63,7 @@ class ConcurrentBatchClaimTest extends AbstractIntegrationTest {
         for (int i = 0; i < 2; i++) {
             futures.add(pool.submit(() -> {
                 start.await();
-                return orchestrator.runBatch(settlementDate);
+                return batchSettlementService.runBatch(settlementDate);
             }));
         }
         start.countDown();

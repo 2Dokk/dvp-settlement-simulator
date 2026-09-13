@@ -9,8 +9,8 @@ import java.math.BigDecimal;
 import java.time.Instant;
 
 /**
- * Double-entry audit trail. Every settled instruction produces exactly four entries:
- * seller SECURITIES debit, buyer SECURITIES credit, buyer CASH debit, seller CASH credit.
+ * Double-entry audit trail. Each entry is sourced from exactly one of: a direct DVP settlement
+ * instruction, or a net position booked by an atomic batch settlement (enforced by a DB check).
  * account_id references either cash_accounts.id or securities_holdings.id depending on
  * account_type (polymorphic — no FK constraint, resolved by application code).
  */
@@ -38,19 +38,33 @@ public class LedgerEntry {
     @Column(nullable = false, precision = 19, scale = 4)
     private BigDecimal amount;
 
-    @Column(name = "related_instruction_id", nullable = false)
+    @Column(name = "related_instruction_id")
     private Long relatedInstructionId;
+
+    @Column(name = "net_position_id")
+    private Long netPositionId;
 
     @Column(name = "created_at", nullable = false, updatable = false)
     private Instant createdAt;
 
-    public LedgerEntry(AccountType accountType, Long accountId, EntryType entryType,
-                        BigDecimal amount, Long relatedInstructionId) {
+    private LedgerEntry(AccountType accountType, Long accountId, EntryType entryType, BigDecimal amount,
+                        Long relatedInstructionId, Long netPositionId) {
         this.accountType = accountType;
         this.accountId = accountId;
         this.entryType = entryType;
         this.amount = amount;
         this.relatedInstructionId = relatedInstructionId;
+        this.netPositionId = netPositionId;
+    }
+
+    public static LedgerEntry forInstruction(AccountType accountType, Long accountId, EntryType entryType,
+                                             BigDecimal amount, Long instructionId) {
+        return new LedgerEntry(accountType, accountId, entryType, amount, instructionId, null);
+    }
+
+    public static LedgerEntry forNetPosition(AccountType accountType, Long accountId, EntryType entryType,
+                                             BigDecimal amount, Long netPositionId) {
+        return new LedgerEntry(accountType, accountId, entryType, amount, null, netPositionId);
     }
 
     @PrePersist

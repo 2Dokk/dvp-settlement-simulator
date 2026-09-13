@@ -2,6 +2,7 @@ package com.dvp.settlement.api;
 
 import com.dvp.settlement.domain.Participant;
 import com.dvp.settlement.repository.ParticipantRepository;
+import com.dvp.settlement.service.AccountService;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
@@ -21,6 +22,9 @@ public class ParticipantController {
     @PostMapping
     @ResponseStatus(HttpStatus.CREATED)
     public ParticipantResponse create(@Valid @RequestBody CreateParticipantRequest request) {
+        if (AccountService.CCP_NAME.equals(request.name())) {
+            throw new IllegalArgumentException("'" + AccountService.CCP_NAME + "' is a reserved participant name");
+        }
         Participant saved = participantRepository.save(new Participant(request.name()));
         return ParticipantResponse.from(saved);
     }

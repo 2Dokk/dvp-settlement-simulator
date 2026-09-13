@@ -37,6 +37,10 @@ public class TradeService {
         if (!instrumentRepository.existsById(instrumentId)) {
             throw new NoSuchElementException("unknown instrument: " + instrumentId);
         }
+        Long ccpId = accountService.ccpParticipantId();
+        if (ccpId.equals(buyerId) || ccpId.equals(sellerId)) {
+            throw new IllegalArgumentException("the CCP cannot be a party to a trade");
+        }
 
         Trade trade = new Trade(buyerId, sellerId, instrumentId, quantity, price, tradeDate, settlementDate);
         trade = tradeRepository.save(trade);

@@ -4,6 +4,7 @@ import com.dvp.settlement.domain.SecurityHolding;
 import jakarta.persistence.LockModeType;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Lock;
+import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
@@ -13,6 +14,15 @@ import java.util.Optional;
 public interface SecurityHoldingRepository extends JpaRepository<SecurityHolding, Long> {
 
     Optional<SecurityHolding> findByParticipantIdAndInstrumentId(Long participantId, Long instrumentId);
+
+    /** Race-free provisioning: two transactions creating the same holding can't both insert. */
+    @Modifying
+    @Query(value = """
+            insert into securities_holdings (participant_id, instrument_id, quantity, version)
+            values (:participantId, :instrumentId, 0, 0)
+            on conflict (participant_id, instrument_id) do nothing
+            """, nativeQuery = true)
+    void insertIfAbsent(@Param("participantId") Long participantId, @Param("instrumentId") Long instrumentId);
 
     List<SecurityHolding> findByParticipantId(Long participantId);
 

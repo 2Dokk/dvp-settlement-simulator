@@ -52,6 +52,9 @@ public class Trade {
     @Column(name = "batch_id")
     private Long batchId;
 
+    @Column(name = "failure_reason", length = 500)
+    private String failureReason;
+
     @Column(name = "created_at", nullable = false, updatable = false)
     private Instant createdAt;
 
@@ -74,5 +77,15 @@ public class Trade {
     @PrePersist
     void prePersist() {
         this.createdAt = Instant.now();
+    }
+
+    public void markSettled() {
+        this.status = TradeStatus.SETTLED;
+        this.failureReason = null;
+    }
+
+    public void markFailed(String reason) {
+        this.status = TradeStatus.FAILED;
+        this.failureReason = reason;
     }
 }

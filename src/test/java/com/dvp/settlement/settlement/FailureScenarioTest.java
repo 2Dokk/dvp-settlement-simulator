@@ -4,6 +4,7 @@ import com.dvp.settlement.concurrency.AbstractIntegrationTest;
 import com.dvp.settlement.domain.*;
 import com.dvp.settlement.repository.*;
 import com.dvp.settlement.service.AccountService;
+import com.dvp.settlement.service.BatchSettlementService;
 import com.dvp.settlement.service.SettlementOrchestrator;
 import com.dvp.settlement.service.SettlementService;
 import com.dvp.settlement.service.TradeService;
@@ -43,6 +44,8 @@ class FailureScenarioTest extends AbstractIntegrationTest {
     private SettlementService settlementService;
     @Autowired
     private SettlementOrchestrator orchestrator;
+    @Autowired
+    private BatchSettlementService batchSettlementService;
 
     @Test
     void insufficientCashLeavesNeitherLegMoved() {
@@ -84,11 +87,9 @@ class FailureScenarioTest extends AbstractIntegrationTest {
         SettlementInstruction first = orchestrator.settleTradeNow(trade.getId());
         assertThat(first.getStatus()).isEqualTo(InstructionStatus.SETTLED);
 
-        // Call it again directly with the same, already-SETTLED instruction id.
         SettlementInstruction second = settlementService.settleInstruction(first.getId());
         assertThat(second.getStatus()).isEqualTo(InstructionStatus.SETTLED);
 
-        // Balances moved exactly once, not twice.
         assertThat(balanceOf(buyer.getId())).isEqualByComparingTo("4500.00");
         assertThat(balanceOf(seller.getId())).isEqualByComparingTo("500.00");
         assertThat(ledgerEntryRepository.findAll()).hasSize(4);
@@ -101,21 +102,14 @@ class FailureScenarioTest extends AbstractIntegrationTest {
     }
 
     /**
-     * Two independent instrument groups netted into the same batch: one buyer (BX) can't cover
-     * their net cash obligation, the other (BY) can. Because every settlement instruction is its
-     * own transaction, BX's shortfall must not block or roll back BY's settlement.
-     *
-     * <p>This also surfaces a real limitation of the CCP-intermediary design (see
-     * SettlementService's class doc): once a batch is netted, the original trade's two sides are
-     * settled as separate instructions against the CCP. If one side settles and the other later
-     * fails, the CCP is left holding a permanent residual imbalance — not just the transient,
-     * self-correcting one a fully-successful batch always resolves back to zero. A production
-     * system would need a guarantee fund (or a reservation/two-phase-commit protocol across a
-     * net position's instructions) to absorb exactly this case; this simulator does not attempt
-     * that and instead documents it here as a known, deliberately-scoped-out gap.
+     * Regression test for the CCP residual imbalance. Two independent instrument groups share a
+     * batch; BX can't pay. Previously SX's delivery to the CCP settled in its own transaction
+     * before BX's payment failed, leaving the CCP holding +50 X and -500 cash forever. Now the
+     * batch plans first, excludes BX's trade before anything moves, and commits the rest in one
+     * transaction.
      */
     @Test
-    void partialFailureInABatchSettlesUnaffectedParticipantsButLeavesCcpResidual() {
+    void partialFailureInABatchLeavesNoCcpResidual() {
         Participant bx = participantRepository.save(new Participant("ShortfallBuyer"));
         Participant sx = participantRepository.save(new Participant("ShortfallSeller"));
         Participant by = participantRepository.save(new Participant("HealthyBuyer"));
@@ -124,9 +118,9 @@ class FailureScenarioTest extends AbstractIntegrationTest {
         Instrument instrumentY = instrumentRepository.save(new Instrument("KR0000000007", "Healthy Instrument"));
         LocalDate settlementDate = LocalDate.now().plusDays(3);
 
-        accountService.depositCash(bx.getId(), new BigDecimal("100.00"));  // needs 500 — will fail
+        accountService.depositCash(bx.getId(), new BigDecimal("100.00"));  // needs 500
         accountService.depositSecurities(sx.getId(), instrumentX.getId(), 50);
-        accountService.depositCash(by.getId(), new BigDecimal("1000.00")); // needs 300 — fine
+        accountService.depositCash(by.getId(), new BigDecimal("1000.00")); // needs 300
         accountService.depositSecurities(sy.getId(), instrumentY.getId(), 100);
 
         Trade tradeX = tradeService.registerTrade(bx.getId(), sx.getId(), instrumentX.getId(),
@@ -134,30 +128,89 @@ class FailureScenarioTest extends AbstractIntegrationTest {
         Trade tradeY = tradeService.registerTrade(by.getId(), sy.getId(), instrumentY.getId(),
                 30, new BigDecimal("10.00"), LocalDate.now(), settlementDate);
 
-        orchestrator.runBatch(settlementDate);
+        batchSettlementService.runBatch(settlementDate);
 
-        assertThat(tradeRepository.findById(tradeX.getId()).orElseThrow().getStatus()).isEqualTo(TradeStatus.FAILED);
+        Trade failed = tradeRepository.findById(tradeX.getId()).orElseThrow();
+        assertThat(failed.getStatus()).isEqualTo(TradeStatus.FAILED);
+        assertThat(failed.getFailureReason()).contains("participant " + bx.getId()).contains("insufficient cash");
         assertThat(tradeRepository.findById(tradeY.getId()).orElseThrow().getStatus()).isEqualTo(TradeStatus.SETTLED);
 
-        // The failing group: SX still delivered (its own leg had no shortfall) and got paid;
-        // BX never paid and never received anything.
-        assertThat(holdingOf(sx.getId(), instrumentX.getId())).isZero();
-        assertThat(balanceOf(sx.getId())).isEqualByComparingTo("500.00");
+        // The failing group: nothing moved on either side.
+        assertThat(holdingOf(sx.getId(), instrumentX.getId())).isEqualTo(50);
+        assertThat(balanceOf(sx.getId())).isEqualByComparingTo("0.00");
         assertThat(holdingOf(bx.getId(), instrumentX.getId())).isZero();
         assertThat(balanceOf(bx.getId())).isEqualByComparingTo("100.00");
 
-        // The healthy group settled completely, unaffected by the other group's failure.
+        // The healthy group settled completely.
         assertThat(holdingOf(sy.getId(), instrumentY.getId())).isEqualTo(70);
         assertThat(balanceOf(sy.getId())).isEqualByComparingTo("300.00");
         assertThat(holdingOf(by.getId(), instrumentY.getId())).isEqualTo(30);
         assertThat(balanceOf(by.getId())).isEqualByComparingTo("700.00");
 
-        // The CCP is left holding SX's 50 units with no one to deliver them to, and owes the
-        // 500 it already paid SX but never collected from BX — a permanent residual, unlike the
-        // fully-successful batch in NettingBatchTest where the CCP always returns to exactly zero.
-        Long ccpId = accountService.getOrCreateCcpParticipantId();
-        assertThat(holdingOf(ccpId, instrumentX.getId())).isEqualTo(50);
-        assertThat(balanceOf(ccpId)).isEqualByComparingTo("-500.00");
+        Long ccpId = accountService.ccpParticipantId();
+        assertThat(holdingOf(ccpId, instrumentX.getId())).isZero();
+        assertThat(holdingOf(ccpId, instrumentY.getId())).isZero();
+        assertThat(balanceOf(ccpId)).isEqualByComparingTo("0.00");
+        LedgerAssertions.assertCcpLedgerBalances(ledgerEntryRepository, cashAccountRepository, securityHoldingRepository, ccpId);
+    }
+
+    /**
+     * B holds no X but nets to zero (sells 50 to A, buys 50 from C). C can't deliver, so once C
+     * is excluded B becomes a net deliverer with nothing to deliver and is excluded too — nothing
+     * in the batch may move.
+     */
+    @Test
+    void cascadingExclusionMovesNothing() {
+        Participant a = participantRepository.save(new Participant("CascadeA"));
+        Participant b = participantRepository.save(new Participant("CascadeB"));
+        Participant c = participantRepository.save(new Participant("CascadeC"));
+        Instrument x = instrumentRepository.save(new Instrument("KR0000000011", "Cascade Corp"));
+        LocalDate settlementDate = LocalDate.now().plusDays(5);
+
+        accountService.depositCash(a.getId(), new BigDecimal("10000.00"));
+        accountService.depositCash(b.getId(), new BigDecimal("10000.00"));
+
+        tradeService.registerTrade(a.getId(), b.getId(), x.getId(), 50, new BigDecimal("10.00"), LocalDate.now(), settlementDate);
+        tradeService.registerTrade(b.getId(), c.getId(), x.getId(), 50, new BigDecimal("10.00"), LocalDate.now(), settlementDate);
+
+        batchSettlementService.runBatch(settlementDate);
+
+        assertThat(tradeRepository.findAll()).allSatisfy(t -> {
+            assertThat(t.getStatus()).isEqualTo(TradeStatus.FAILED);
+            assertThat(t.getFailureReason()).isNotBlank();
+        });
+        assertThat(balanceOf(a.getId())).isEqualByComparingTo("10000.00");
+        assertThat(balanceOf(b.getId())).isEqualByComparingTo("10000.00");
+        assertThat(ledgerEntryRepository.findAll()).isEmpty();
+    }
+
+    /**
+     * An instruction is created for a trade, then a batch claims that trade before the
+     * instruction runs. The direct path must notice under lock and refuse, not settle it twice.
+     */
+    @Test
+    void directSettlementOfATradeAlreadyClaimedByABatchIsRefused() {
+        Participant buyer = participantRepository.save(new Participant("ClaimedBuyer"));
+        Participant seller = participantRepository.save(new Participant("ClaimedSeller"));
+        Instrument instrument = instrumentRepository.save(new Instrument("KR0000000012", "Double Path Corp"));
+        LocalDate settlementDate = LocalDate.now().plusDays(6);
+
+        accountService.depositCash(buyer.getId(), new BigDecimal("5000.00"));
+        accountService.depositSecurities(seller.getId(), instrument.getId(), 100);
+
+        Trade trade = tradeService.registerTrade(buyer.getId(), seller.getId(), instrument.getId(),
+                50, new BigDecimal("10.00"), LocalDate.now(), settlementDate);
+        Long instructionId = tradeService.createInstructionForTrade(trade.getId());
+
+        batchSettlementService.runBatch(settlementDate);
+        SettlementInstruction instruction = settlementService.settleInstruction(instructionId);
+
+        assertThat(instruction.getStatus()).isEqualTo(InstructionStatus.FAILED);
+        assertThat(instruction.getFailureReason()).contains("no longer PENDING");
+        assertThat(tradeRepository.findById(trade.getId()).orElseThrow().getStatus()).isEqualTo(TradeStatus.SETTLED);
+        // Moved exactly once, by the batch.
+        assertThat(balanceOf(buyer.getId())).isEqualByComparingTo("4500.00");
+        assertThat(holdingOf(buyer.getId(), instrument.getId())).isEqualTo(50);
     }
 
     private BigDecimal balanceOf(Long participantId) {

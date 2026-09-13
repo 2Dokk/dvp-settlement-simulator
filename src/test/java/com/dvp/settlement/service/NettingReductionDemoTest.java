@@ -10,7 +10,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 /**
  * Not a correctness test — a throwaway demo that runs the exact same NetKey/NetAccumulator
- * folding NettingService uses, against one day's worth of trades in a single instrument, and
+ * folding BatchNettingPlanner uses, against one day's worth of trades in a single instrument, and
  * prints how many settlement instructions that collapses down to. Answers "how many trades did
  * netting turn into how many instructions" with a real number instead of a guess.
  */
