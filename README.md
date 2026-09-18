@@ -92,7 +92,7 @@ GitHub Actions(`.github/workflows/ci.yml`)가 push·PR마다 전체 테스트를
 | GET | `/accounts/{participantId}/ledger` | 원장(감사 추적) 조회 |
 | POST | `/trades` | 거래 등록 |
 | POST | `/trades/{id}/settle` | 넷팅 없이 즉시 단건 DVP 결제 |
-| POST | `/settlement-batches/{date}/run` | 해당일 배치 넷팅·정산 (원자적) |
+| POST | `/settlement-batches/{date}/run` | 해당일 배치 넷팅·정산 |
 | GET | `/settlement-batches/{id}` | 배치 결과(순포지션, 거래별 상태·실패 사유) 조회 |
 
 ## 알려진 단순화 / 한계
