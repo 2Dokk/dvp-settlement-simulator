@@ -5,6 +5,10 @@
 증권 이전과 대금 지급이 반드시 함께 성공하거나 함께 실패하는 DVP(Delivery versus Payment) 결제를,
 넷팅(netting)과 동시성 제어(concurrency control)까지 포함해 시뮬레이션하는 Spring Boot 프로젝트입니다.
 
+![넷팅 전후 비교: 결제 이동 18건 → 4건](docs/images/netting.png)
+
+![동시성·장애 시나리오 검증 결과](docs/images/results.png)
+
 ## 핵심 아이디어
 
 ### 1. DVP 원자성 = 하나의 DB 트랜잭션
