@@ -15,6 +15,11 @@ public interface SecurityHoldingRepository extends JpaRepository<SecurityHolding
 
     Optional<SecurityHolding> findByParticipantIdAndInstrumentId(Long participantId, Long instrumentId);
 
+    /** Id only — see CashAccountRepository#findIdByParticipantIdAndCurrency for why. */
+    @Query("select h.id from SecurityHolding h where h.participantId = :participantId and h.instrumentId = :instrumentId")
+    Optional<Long> findIdByParticipantIdAndInstrumentId(@Param("participantId") Long participantId,
+                                                        @Param("instrumentId") Long instrumentId);
+
     /** Race-free provisioning: two transactions creating the same holding can't both insert. */
     @Modifying
     @Query(value = """

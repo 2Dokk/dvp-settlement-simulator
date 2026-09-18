@@ -47,10 +47,10 @@ public class TradeService {
 
         // Provision accounts up front (not lock-critical) so SettlementService only ever has to
         // lock rows that already exist.
-        accountService.getOrCreateCashAccount(buyerId, AccountService.DEFAULT_CURRENCY);
-        accountService.getOrCreateCashAccount(sellerId, AccountService.DEFAULT_CURRENCY);
-        accountService.getOrCreateSecurityHolding(buyerId, instrumentId);
-        accountService.getOrCreateSecurityHolding(sellerId, instrumentId);
+        accountService.cashAccountId(buyerId);
+        accountService.cashAccountId(sellerId);
+        accountService.securityHoldingId(buyerId, instrumentId);
+        accountService.securityHoldingId(sellerId, instrumentId);
 
         return trade;
     }

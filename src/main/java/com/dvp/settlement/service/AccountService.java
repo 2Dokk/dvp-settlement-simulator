@@ -37,11 +37,28 @@ public class AccountService {
         return securityHoldingRepository.findByParticipantIdAndInstrumentId(participantId, instrumentId).orElseThrow();
     }
 
+    /**
+     * Ensures the account exists and returns its id without loading the entity. Use this (not
+     * getOrCreateCashAccount) before lockById in the same transaction — a previously loaded,
+     * unlocked entity would shadow the freshly locked row with stale state.
+     */
+    @Transactional
+    public Long cashAccountId(Long participantId) {
+        cashAccountRepository.insertIfAbsent(participantId, DEFAULT_CURRENCY);
+        return cashAccountRepository.findIdByParticipantIdAndCurrency(participantId, DEFAULT_CURRENCY).orElseThrow();
+    }
+
+    /** Securities counterpart of {@link #cashAccountId(Long)}. */
+    @Transactional
+    public Long securityHoldingId(Long participantId, Long instrumentId) {
+        securityHoldingRepository.insertIfAbsent(participantId, instrumentId);
+        return securityHoldingRepository.findIdByParticipantIdAndInstrumentId(participantId, instrumentId).orElseThrow();
+    }
+
     /** Injects opening cash capital for a participant. Not a DVP movement — no counterparty. */
     @Transactional
     public CashAccount depositCash(Long participantId, BigDecimal amount) {
-        CashAccount account = getOrCreateCashAccount(participantId, DEFAULT_CURRENCY);
-        account = cashAccountRepository.lockById(account.getId()).orElseThrow();
+        CashAccount account = cashAccountRepository.lockById(cashAccountId(participantId)).orElseThrow();
         account.credit(amount);
         return account;
     }
@@ -49,8 +66,7 @@ public class AccountService {
     /** Injects opening securities holdings for a participant. Not a DVP movement — no counterparty. */
     @Transactional
     public SecurityHolding depositSecurities(Long participantId, Long instrumentId, long quantity) {
-        SecurityHolding holding = getOrCreateSecurityHolding(participantId, instrumentId);
-        holding = securityHoldingRepository.lockById(holding.getId()).orElseThrow();
+        SecurityHolding holding = securityHoldingRepository.lockById(securityHoldingId(participantId, instrumentId)).orElseThrow();
         holding.credit(quantity);
         return holding;
     }
@@ -59,7 +75,7 @@ public class AccountService {
     public Long ccpParticipantId() {
         participantRepository.insertCcpIfAbsent();
         Long ccpId = participantRepository.findByName(CCP_NAME).orElseThrow().getId();
-        getOrCreateCashAccount(ccpId, DEFAULT_CURRENCY);
+        cashAccountId(ccpId);
         return ccpId;
     }
 }

@@ -62,20 +62,21 @@ public class BatchSettlementService {
 
     private void settle(Long batchId, List<Trade> trades) {
         Long ccpId = accountService.ccpParticipantId();
-        Long ccpCashId = accountService.getOrCreateCashAccount(ccpId, AccountService.DEFAULT_CURRENCY).getId();
+        Long ccpCashId = accountService.cashAccountId(ccpId);
 
+        // Ids only: loading entities before locking would leave stale copies in the persistence
+        // context that lockById then returns instead of the freshly locked rows.
         Map<Long, Long> cashIdByParticipant = new TreeMap<>();
         Map<NetKey, Long> holdingIdByKey = new HashMap<>();
         Map<Long, Long> ccpHoldingIdByInstrument = new HashMap<>();
         for (Trade t : trades) {
             for (Long participant : List.of(t.getBuyerId(), t.getSellerId())) {
-                cashIdByParticipant.computeIfAbsent(participant, p ->
-                        accountService.getOrCreateCashAccount(p, AccountService.DEFAULT_CURRENCY).getId());
+                cashIdByParticipant.computeIfAbsent(participant, accountService::cashAccountId);
                 holdingIdByKey.computeIfAbsent(new NetKey(participant, t.getInstrumentId()), k ->
-                        accountService.getOrCreateSecurityHolding(k.participantId(), k.instrumentId()).getId());
+                        accountService.securityHoldingId(k.participantId(), k.instrumentId()));
             }
             ccpHoldingIdByInstrument.computeIfAbsent(t.getInstrumentId(), i ->
-                    accountService.getOrCreateSecurityHolding(ccpId, i).getId());
+                    accountService.securityHoldingId(ccpId, i));
         }
 
         // Lock every participant account the batch could touch, in the global order. The CCP's

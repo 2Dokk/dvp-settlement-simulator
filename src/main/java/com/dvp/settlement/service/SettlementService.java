@@ -53,10 +53,10 @@ public class SettlementService {
             }
         }
 
-        Long buyerCashId = accountService.getOrCreateCashAccount(instruction.getToParticipantId(), AccountService.DEFAULT_CURRENCY).getId();
-        Long sellerCashId = accountService.getOrCreateCashAccount(instruction.getFromParticipantId(), AccountService.DEFAULT_CURRENCY).getId();
-        Long buyerHoldingId = accountService.getOrCreateSecurityHolding(instruction.getToParticipantId(), instruction.getInstrumentId()).getId();
-        Long sellerHoldingId = accountService.getOrCreateSecurityHolding(instruction.getFromParticipantId(), instruction.getInstrumentId()).getId();
+        Long buyerCashId = accountService.cashAccountId(instruction.getToParticipantId());
+        Long sellerCashId = accountService.cashAccountId(instruction.getFromParticipantId());
+        Long buyerHoldingId = accountService.securityHoldingId(instruction.getToParticipantId(), instruction.getInstrumentId());
+        Long sellerHoldingId = accountService.securityHoldingId(instruction.getFromParticipantId(), instruction.getInstrumentId());
 
         Map<Long, CashAccount> lockedCash = new TreeMap<>();
         for (Long id : orderedDistinct(buyerCashId, sellerCashId)) {

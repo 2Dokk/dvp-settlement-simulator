@@ -14,6 +14,15 @@ public interface CashAccountRepository extends JpaRepository<CashAccount, Long> 
 
     Optional<CashAccount> findByParticipantIdAndCurrency(Long participantId, String currency);
 
+    /**
+     * Id only, deliberately not the entity: loading the entity here would put an unlocked copy in
+     * the persistence context, and a later lockById would then return that stale copy instead of
+     * the row it just locked.
+     */
+    @Query("select a.id from CashAccount a where a.participantId = :participantId and a.currency = :currency")
+    Optional<Long> findIdByParticipantIdAndCurrency(@Param("participantId") Long participantId,
+                                                    @Param("currency") String currency);
+
     /** Race-free provisioning: two transactions creating the same account can't both insert. */
     @Modifying
     @Query(value = """
