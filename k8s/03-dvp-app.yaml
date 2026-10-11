@@ -1,0 +1,78 @@
+# DVP 앱: 파드를 2개 유지하고, 각 파드의 상태를 프로브로 감시한다.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: dvp-app
+  namespace: dvp
+spec:
+  replicas: 5
+  selector:
+    matchLabels:
+      app: dvp-app
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 0 # 기존 파드를 먼저 내리지 않는다 → 무중단 배포의 핵심
+      maxSurge: 1 # 교체 중 최대 1개까지 추가로 띄운다
+  template:
+    metadata:
+      labels:
+        app: dvp-app
+    spec:
+      containers:
+        - name: dvp-app
+          image: dvp-app:v2
+          imagePullPolicy: IfNotPresent # 노드에 이미 있으면 레지스트리에서 받지 않는다
+          ports:
+            - containerPort: 8080
+          env:
+            - name: APP_VERSION
+              value: v2
+            - name: SPRING_DATASOURCE_URL
+              value: jdbc:postgresql://postgres:5432/dvp
+            - name: SPRING_DATASOURCE_USERNAME
+              valueFrom:
+                secretKeyRef:
+                  name: dvp-db
+                  key: POSTGRES_USER
+            - name: SPRING_DATASOURCE_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: dvp-db
+                  key: POSTGRES_PASSWORD
+          startupProbe: # 기동이 느린 앱을 위해, 뜰 때까지 최대 150초 기다려준다
+            httpGet:
+              path: /actuator/health/readiness
+              port: 8080
+            periodSeconds: 5
+            failureThreshold: 30
+          readinessProbe: # 실패하면 Service가 이 파드로 트래픽을 보내지 않는다
+            httpGet:
+              path: /actuator/health/readiness
+              port: 8080
+            periodSeconds: 5
+          livenessProbe: # 실패가 쌓이면 쿠버네티스가 이 파드를 재시작한다
+            httpGet:
+              path: /actuator/health/liveness
+              port: 8080
+            periodSeconds: 10
+            failureThreshold: 3
+          resources:
+            requests:
+              cpu: 200m
+              memory: 512Mi
+            limits:
+              memory: 1Gi
+---
+# 앱 앞단 창구. 파드가 2개든 5개든, 이 Service 하나로 접속하면 알아서 나눠 보낸다.
+apiVersion: v1
+kind: Service
+metadata:
+  name: dvp-app
+  namespace: dvp
+spec:
+  selector:
+    app: dvp-app
+  ports:
+    - port: 8080
+      targetPort: 8080

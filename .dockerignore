@@ -1,0 +1,8 @@
+# 이미지 빌드에 보낼 필요 없는 것들 (빌드 속도와 이미지 크기에 영향)
+.git
+.github
+.gradle
+build
+docs
+k8s
+*.md

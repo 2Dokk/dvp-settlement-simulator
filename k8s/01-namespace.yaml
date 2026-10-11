@@ -1,0 +1,6 @@
+# 네임스페이스: 클러스터 안을 논리적으로 나누는 폴더 같은 개념.
+# 이 실습 리소스를 모두 dvp 안에 모아두면 한 번에 조회/삭제하기 쉽다.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: dvp

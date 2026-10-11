@@ -1,0 +1,88 @@
+# Secret: 비밀번호 같은 민감한 값을 YAML 본문에서 분리해 보관하는 리소스.
+# (실습용이라 값이 그대로 보이지만, 실무에서는 외부 비밀 관리 도구와 연동한다.)
+apiVersion: v1
+kind: Secret
+metadata:
+  name: dvp-db
+  namespace: dvp
+type: Opaque
+stringData:
+  POSTGRES_DB: dvp
+  POSTGRES_USER: dvp
+  POSTGRES_PASSWORD: dvp
+---
+# PVC: 파드가 죽어도 남아야 하는 데이터를 담을 디스크 요청서.
+# 컨테이너 내부는 재시작하면 사라지므로 DB 데이터는 반드시 이렇게 분리한다.
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: postgres-data
+  namespace: dvp
+spec:
+  accessModes: ["ReadWriteOnce"]
+  resources:
+    requests:
+      storage: 1Gi
+---
+# Deployment: "이 파드를 항상 N개 유지해줘"를 담당하는 관리자.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: postgres
+  namespace: dvp
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: postgres
+  strategy:
+    type: Recreate # 디스크를 한 파드만 쓸 수 있으므로 새 파드를 띄우기 전에 기존 파드를 먼저 내린다.
+  template:
+    metadata:
+      labels:
+        app: postgres
+    spec:
+      containers:
+        - name: postgres
+          image: postgres:16
+          envFrom:
+            - secretRef:
+                name: dvp-db
+          env:
+            # 볼륨 루트를 그대로 쓰면 초기화에 실패할 수 있어 하위 디렉터리를 지정한다.
+            - name: PGDATA
+              value: /var/lib/postgresql/data/pgdata
+          ports:
+            - containerPort: 5432
+          volumeMounts:
+            - name: data
+              mountPath: /var/lib/postgresql/data
+          readinessProbe: # 접속 받을 준비가 됐는지 확인 (앱이 너무 일찍 붙는 것을 막는다)
+            exec:
+              command: ["pg_isready", "-U", "dvp", "-d", "dvp"]
+            initialDelaySeconds: 5
+            periodSeconds: 5
+          resources:
+            requests:
+              cpu: 100m
+              memory: 256Mi
+            limits:
+              memory: 512Mi
+      volumes:
+        - name: data
+          persistentVolumeClaim:
+            claimName: postgres-data
+---
+# Service: 파드는 죽고 살아나며 IP가 바뀌므로, 고정된 이름으로 접속하게 해주는 창구.
+# 앱은 이 이름(postgres)으로 DB에 접속한다.
+apiVersion: v1
+kind: Service
+metadata:
+  name: postgres
+  namespace: dvp
+spec:
+  selector:
+    app: postgres
+  ports:
+    - port: 5432
+      targetPort: 5432
