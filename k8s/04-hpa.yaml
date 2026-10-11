@@ -1,0 +1,30 @@
+# HPA: 파드 개수를 사람이 아니라 CPU 사용률을 보고 쿠버네티스가 조절한다.
+#
+# 기준: 파드 하나당 CPU 요청량(requests.cpu = 200m)의 50%, 즉 100m 를 넘으면 늘린다.
+# 측정값은 metrics-server 가 수집한다.
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: dvp-app
+  namespace: dvp
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: dvp-app
+  minReplicas: 2
+  maxReplicas: 10
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: 50
+  behavior:
+    scaleUp:
+      stabilizationWindowSeconds: 0 # 부하가 오르면 바로 늘린다
+    scaleDown:
+      # 기본값은 300초. 실습에서 줄어드는 것을 빨리 보기 위해 60초로 줄였다.
+      # (운영에서는 트래픽이 출렁일 때 파드가 요동치지 않도록 길게 두는 편이 안전하다.)
+      stabilizationWindowSeconds: 60

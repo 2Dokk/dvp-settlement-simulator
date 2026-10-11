@@ -98,6 +98,41 @@ GitHub Actions(`.github/workflows/ci.yml`)가 push·PR마다 전체 테스트를
 | POST | `/trades/{id}/settle` | 넷팅 없이 즉시 단건 DVP 결제 |
 | POST | `/settlement-batches/{date}/run` | 해당일 배치 넷팅·정산 |
 | GET | `/settlement-batches/{id}` | 배치 결과(순포지션, 거래별 상태·실패 사유) 조회 |
+| GET | `/version` | 배포된 버전과 응답한 파드 이름 (롤링 업데이트 확인용) |
+| GET | `/actuator/health` | 상태 점검 (쿠버네티스 liveness/readiness 프로브) |
+
+## 쿠버네티스 배포
+
+`k8s/` 아래 매니페스트로 로컬 쿠버네티스(Docker Desktop 내장, 단일 노드)에 배포하고
+자동 복구·확장·무중단 배포를 검증했습니다.
+
+| 파일 | 내용 |
+|---|---|
+| `k8s/01-namespace.yaml` | 네임스페이스 `dvp` |
+| `k8s/02-postgres.yaml` | PostgreSQL (Secret + PVC + Deployment + Service) |
+| `k8s/03-dvp-app.yaml` | 앱 Deployment(RollingUpdate `maxUnavailable: 0`) + Service |
+| `k8s/04-hpa.yaml` | HPA (CPU 50% 기준, 2~10개) |
+| `k8s/load-image.ps1` | 로컬 빌드 이미지를 클러스터 노드에 주입 (아래 참고) |
+
+```bash
+docker build -t dvp-app:v1 .
+./k8s/load-image.ps1 dvp-app:v1          # Windows + Docker Desktop 한정
+kubectl apply -f k8s/01-namespace.yaml -f k8s/02-postgres.yaml -f k8s/03-dvp-app.yaml -f k8s/04-hpa.yaml
+```
+
+### 설계 포인트
+
+- **DB 마이그레이션 중복 방지** — 앱 파드 여러 개가 동시에 기동해도 Flyway가 DB 잠금을 걸어
+  마이그레이션은 한 번만 실행됩니다(`flyway_schema_history` 2행으로 확인).
+- **무중단 배포** — `maxUnavailable: 0` + readiness 프로브. 새 파드가 준비된 뒤에야 기존 파드를 내리므로
+  배포 중에도 요청이 끊기지 않습니다(배포 중 0.3초 간격 요청에서 200 외 응답 0건).
+- **자동 복구** — 파드를 삭제하면 ReplicaSet이 새 파드를 만들고(약 6초), 컨테이너 프로세스만 죽으면
+  같은 파드에서 재시작됩니다(`RESTARTS` 증가).
+- **자동 확장** — 부하를 주면 CPU 사용률에 따라 2개에서 10개까지 늘어나고, 부하가 멎으면 다시 줄어듭니다.
+  늘릴 때는 즉시(`scaleUp` 0초), 줄일 때는 천천히(`scaleDown` 60초) 반응하도록 설정했습니다.
+- **이미지 배포 경로** — CI가 테스트 통과 시에만 이미지를 빌드해 `ghcr.io`에 올립니다.
+  로컬 실습에서는 레지스트리 대신 `load-image.ps1`로 노드의 containerd에 직접 주입합니다
+  (Docker Desktop의 쿠버네티스는 kind 기반이라 노드가 별도 이미지 저장소를 씁니다).
 
 ## 알려진 단순화 / 한계
 
@@ -107,3 +142,5 @@ GitHub Actions(`.github/workflows/ci.yml`)가 push·PR마다 전체 테스트를
   CSD에서 별도 최적화 알고리즘으로 풉니다.
 - 제외된 거래는 FAILED로 끝납니다. 실제 결제기관처럼 다음 결제 사이클로 재투입(recycling)하지는 않습니다.
 - 배치 하나가 관련 계좌 잠금을 트랜잭션 끝까지 유지하므로, 참가자를 공유하는 배치끼리는 직렬로 처리됩니다.
+- 쿠버네티스 배포는 **단일 노드 로컬 클러스터** 기준입니다. 노드 장애, Ingress, 모니터링, 네트워크 정책은
+  다루지 않았고, DB도 실습 편의를 위해 Deployment + PVC로 띄웠습니다(운영이라면 StatefulSet이나 관리형 DB).

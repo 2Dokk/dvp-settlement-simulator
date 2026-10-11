@@ -5,7 +5,8 @@ metadata:
   name: dvp-app
   namespace: dvp
 spec:
-  replicas: 5
+  # replicas 를 여기에 두지 않는다: HPA(04-hpa.yaml)가 개수를 관리하므로,
+  # 이 파일에 숫자를 적어두면 apply 할 때마다 HPA가 정한 개수를 덮어쓰게 된다.
   selector:
     matchLabels:
       app: dvp-app
